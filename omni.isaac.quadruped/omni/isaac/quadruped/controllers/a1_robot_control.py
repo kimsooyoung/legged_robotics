@@ -130,7 +130,7 @@ class A1RobotControl:
             input_states._contacts[i] = input_states._contacts[i] or input_states._early_contacts[i]
 
         # root control
-
+        # grf : 지금 world frame 기준
         grf = self._compute_grf(desired_states, input_states, input_params)
         grf_rel = grf @ input_states._rot_mat
         foot_forces_grf = -grf_rel.flatten()
@@ -155,6 +155,8 @@ class A1RobotControl:
             else:
                 torques[3 * i : 3 * i + 3] = torques_kin[3 * i : 3 * i + 3]
 
+        # _init_transition이면 => torques_init (grf만 고려)
+        # 아니면 => torques (grf + kin)
         torques = (1 - input_states._init_transition) * torques_init + input_states._init_transition * torques
         torques += input_params._torque_gravity
 
@@ -353,11 +355,20 @@ class A1RobotControl:
         #     [  0,   0,   0,   0, 400,   0],
         #     [  0,   0,   0,   0,   0, 100]])
         # u_weight = 1e-3
+
+        # QP prepare
         Q = np.diag(np.square(acc_weight))
         R = u_weight
         F_min = 0
         F_max = 250.0
+
+        # C.T @ Q @ C + R 
+        # C : control - state matrix / x = Cu
+        # R / Q : weight matrix
         hessian = np.identity(12) * R + inertia_inv.T @ Q @ inertia_inv
+
+        # zero-reference MPC formulation
+        # TODO: 여기가 이해가 안간다.
         gradient = -inertia_inv.T @ Q @ root_acc
         linearMatrix = np.zeros([20, 12])
         lowerBound = np.zeros(20)
@@ -386,6 +397,18 @@ class A1RobotControl:
             c_flag = 1.0 if modified_contacts[i] else 0.0
             lowerBound[i] = c_flag * F_min
             upperBound[i] = c_flag * F_max
+
+        # 0 <= FL_z <= 250
+        # 0 <= FR_z <= 250
+        # 0 <= RL_z <= 250
+        # 0 <= RR_z <= 250
+        # -0.2*FL_z <= FL_y <= 0.2*FL_z
+        # -0.2*FR_z <= FR_x <= 0.2*FR_z
+        # -0.2*FR_z <= FR_y <= 0.2*FR_z
+        # -0.2*RL_z <= RL_x <= 0.2*RL_z
+        # -0.2*RL_z <= RL_y <= 0.2*RL_z
+        # -0.2*RR_z <= RR_x <= 0.2*RR_z
+        # -0.2*RR_z <= RR_y <= 0.2*RR_z
 
         sparse_hessian = sp.csc_matrix(hessian)
 
@@ -467,9 +490,13 @@ class A1RobotControl:
                 root_acc[i] = 500
 
         # Create inverse inertia matrix
-        # 
+        #
+        # TODO: inertia_inv이 자체가 무슨 의미를 갖고 있지? 
         inertia_inv = np.zeros([6, 12])
         inertia_inv[0:3] = np.tile(np.eye(3), 4)  # TODO: use the real inertia from URDF
+
+        # _foot_pos_abs: the foot current pos in the absolute frame (rotated robot frame) - world frame 다리 위치임
+        # inertia_inv 하단부는 결국 robot frame 기준으로 _foot_pos_abs 변환한 것이다. => 이게 inertia inverse??
         for i in range(4):
             skew_mat = skew(input_states._foot_pos_abs[i, :])
             inertia_inv[3:6, i * 3 : i * 3 + 3] = input_states._rot_mat_z.T @ skew_mat
