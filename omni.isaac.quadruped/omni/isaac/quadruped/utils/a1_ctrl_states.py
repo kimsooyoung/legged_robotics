@@ -44,6 +44,7 @@ class A1CtrlStates:
 
     _root_ang_vel: np.array = field(default_factory=lambda: np.zeros(3))
     """feedback state: robot angular velocity in world frame"""
+    # 오타 같은데, robot frame 같음
 
     _joint_pos: np.array = field(default_factory=lambda: np.zeros(12))
     """feedback state: robot motor joint angles"""

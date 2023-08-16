@@ -74,9 +74,16 @@ class Unitree(Articulation):
                 carb.log_warn("asset path is: " + asset_path)
                 prim.GetReferences().AddReference(asset_path)
 
+        # state, foot_forces, base_lin_acc, base_ang_vel
         self._measurement = A1Measurement()
+
+        # desired_joint_torque
         self._command = A1Command()
+
+        # base_frame, joint_pos, joint_vel
         self._state = A1State()
+
+        # base_frame, joint_pos, joint_vel
         self._default_a1_state = A1State()
 
         if position is not None:
@@ -96,6 +103,7 @@ class Unitree(Articulation):
         super().__init__(prim_path=self._prim_path, name=name, position=position, orientation=orientation)
 
         # contact sensor setup
+        # "FL", "FR", "RL", "RR"
         self.feet_order = ["FL", "FR", "RL", "RR"]
         self.feet_path = [
             self._prim_path + "/FL_foot",

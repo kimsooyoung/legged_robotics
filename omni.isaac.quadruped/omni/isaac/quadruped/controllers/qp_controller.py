@@ -121,6 +121,7 @@ class A1QPController:
             if (self._ctrl_states._exp_time > 1) and self._ctrl_states._init_transition == 0:
                 self._ctrl_states._init_transition = 1
 
+        # 간단한 경로 추적 
         if path_follow:
             if self._ctrl_states._exp_time > 6:
                 if self.waypoint_tgt_idx == len(self.waypoint_pose) and self._ctrl_states._init_transition == 1:
@@ -134,15 +135,18 @@ class A1QPController:
                         [self._ctrl_states._root_pos[0], self._ctrl_states._root_pos[1], self._ctrl_states._euler[2]]
                     )
 
+                    # position에서 x, y, yaw 만 빼낸다.
                     diff_pose = self.waypoint_pose[self.waypoint_tgt_idx] - cur_pos
                     diff_pos = np.array([diff_pose[0], diff_pose[1], 0])
 
+                    # yaw angle 보정
                     # fix yaw angle for diff_pos
                     if diff_pose[2] > 1.5 * 3.14:  # tgt 3.14, cur -3.14
                         diff_pose[2] = diff_pose[2] - 6.28
                     if diff_pose[2] < -1.5 * 3.14:  # tgt -3.14, cur 3.14
                         diff_pose[2] = 6.28 + diff_pose[2]
 
+                    # diff_pos를 body frame으로 변환한 뒤 아주 간단하게 * 10을 해서 경로로 전환한다.
                     # vel command body frame
                     diff_pos_r = self._ctrl_states._rot_mat_z.T @ diff_pos
                     self._current_base_command[0] = 10 * diff_pos_r[0]
@@ -151,20 +155,26 @@ class A1QPController:
                     # yaw command
                     self._current_base_command[2] = 10 * diff_pose[2]
 
+                    # target pose에 도달하면 다음 target으로 넘어간다.
                     if np.linalg.norm(diff_pose) < 0.1 and self.waypoint_tgt_idx < len(self.waypoint_pose):
                         self.waypoint_tgt_idx += 1
                         # print(self.waypoint_tgt_idx, " - ", self.waypoint_pose[self.waypoint_tgt_idx])
                 else:
+                    # 모든 target pose에 도달했을 때
                     # self.waypoint_tgt_idx > len(self.waypoint_pose), in this case the planner is disabled
                     carb.log_info("target reached, back to manual control mode")
                     path_follow = False
                     pass
 
+        # desired states update
+        # velocity updates
         # update controller states from target command
         self._desired_states._root_lin_vel_d[0] = self._current_base_command[0]
         self._desired_states._root_lin_vel_d[1] = self._current_base_command[1]
         self._desired_states._root_ang_vel_d[2] = self._current_base_command[2]
 
+        # euler angle update
+        # _euler_d : desired body orientation in _euler angle
         self._desired_states._euler_d[2] += self._desired_states._root_ang_vel_d[2] * dt
 
         # position locking
@@ -194,6 +204,7 @@ class A1QPController:
             self._ctrl_states._prev_transition = self._ctrl_states._init_transition
 
         self._root_control.update_plan(self._desired_states, self._ctrl_states, self._ctrl_params, dt)
+
         # update_plan updates swing foot target
         # swing foot control and stance foot control
         torques = self._root_control.generate_ctrl(self._desired_states, self._ctrl_states, self._ctrl_params)
@@ -201,7 +212,7 @@ class A1QPController:
 
     def switch_mode(self):
         """[summary]
-        
+
         toggle between stationary/moving mode"""
         self._ctrl_states._prev_transition = self._ctrl_states._init_transition
         self._ctrl_states._init_transition = self._current_base_command[3]
@@ -280,6 +291,7 @@ class A1QPController:
 
         for i, leg in enumerate(["FL", "FR", "RL", "RR"]):
             # notice the id order of A1SysModel follows that on A1 hardware
+            # [1, 0, 3, 2] -> [FL, FR, RL, RR]
             swap_i = self._ctrl_params._swap_foot_indices[i]
             self._ctrl_states._foot_pos_rel[i, :] = self._sys_model.forward_kinematics(
                 swap_i, self._ctrl_states._joint_pos[i * 3 : (i + 1) * 3]
