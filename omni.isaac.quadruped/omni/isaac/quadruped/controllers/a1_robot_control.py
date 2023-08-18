@@ -40,7 +40,8 @@ class A1RobotControl:
     """
     Operations
     """
-
+    
+    # swing traj update 
     def update_plan(
         self, desired_states: A1DesiredStates, input_states: A1CtrlStates, input_params: A1CtrlParams, dt: float
     ) -> None:
@@ -64,6 +65,7 @@ class A1RobotControl:
         input_states._gait_counter += input_states._gait_counter_speed
         input_states._gait_counter %= input_states._counter_per_gait
 
+    # 논문의 3-D
     def generate_ctrl(
         self, desired_states: A1DesiredStates, input_states: A1CtrlStates, input_params: A1CtrlParams
     ) -> None:
@@ -93,6 +95,7 @@ class A1RobotControl:
 
         bezier_time = np.zeros(4)
         for i in range(4):
+            # early contact, 상태 바꾸고 다시 리셋한다.
             if input_states._gait_counter[i] < input_states._counter_per_swing:
                 bezier_time[i] = 0.0
                 input_states._foot_pos_start_rel[i, :] = foot_pos_cur[i, :]
@@ -109,6 +112,8 @@ class A1RobotControl:
         # foot_pos_final : _foot_pos_target_rel (foot target pos in the relative frame (robot frame))
         # 
         # foot_pos_target => robot frame 기준 target
+
+        # 논문의 3-C
         foot_pos_target = self._get_from_bezier_curve(input_states._foot_pos_start_rel, foot_pos_final, bezier_time)
         foot_pos_error = foot_pos_target - foot_pos_cur
         foot_forces_kin = (input_params._kp_foot * foot_pos_error).flatten()
@@ -116,8 +121,10 @@ class A1RobotControl:
         # detect early contacts
         # how to determine which foot is in contact: check gait counter
         for i in range(4):
+            # slow contact
             if not input_states._contacts[i] and input_states._gait_counter[i] <= input_states._counter_per_swing * 1.5:
                 input_states._early_contacts[i] = False
+            # early contact
             if (
                 not input_states._contacts[i]
                 and input_states._early_contacts[i] is False
@@ -138,6 +145,12 @@ class A1RobotControl:
         # convert to torque
         M = np.kron(np.eye(4, dtype=int), input_params._km_foot)
         # torques_init = input_states._j_foot.T @ foot_forces_init
+        # J * 극좌표 = Cartesian
+        # 지금은 극좌표 = J.inv * Cartesian
+        # kin => swing / grf => contact
+        # 몸체를 중심점으로 생각하면, 끝점에 의한 모멘트 평형만 생각하면 된다.
+        # M @ foot_forces_kin => 토크
+        # np.linalg.inv(input_states._j_foot) 곱해주기 => 극 좌표 변환
         torques_kin = np.linalg.inv(input_states._j_foot) @ M @ foot_forces_kin
         # torques_kin = input_states._j_foot.T @ foot_forces_kin
         torques_grf = input_states._j_foot.T @ foot_forces_grf
@@ -155,8 +168,8 @@ class A1RobotControl:
             else:
                 torques[3 * i : 3 * i + 3] = torques_kin[3 * i : 3 * i + 3]
 
-        # _init_transition이면 => torques_init (grf만 고려)
-        # 아니면 => torques (grf + kin)
+        # _init_transition이면 => torques (grf + kin)
+        # 아니면 => torques_init (grf만 고려)
         torques = (1 - input_states._init_transition) * torques_init + input_states._init_transition * torques
         torques += input_params._torque_gravity
 
@@ -172,6 +185,7 @@ class A1RobotControl:
     Internal helpers.
     """
 
+    # trot, gallop과 같은 보행 제어 + 카운터 설정 
     def _update_gait_plan(self, input_states: A1CtrlStates) -> None:
         """ [summary]
         
@@ -203,6 +217,7 @@ class A1RobotControl:
 
         input_states._gait_type_last = input_states._gait_type
 
+    # 논문의 3-E swing시 다리의 궤적을 2차원으로 사영시킨 위치를 계산한다.
     def _update_foot_plan(
         self, desired_states: A1DesiredStates, input_states: A1CtrlStates, input_params: A1CtrlParams, dt: float
     ) -> None:
@@ -247,6 +262,7 @@ class A1RobotControl:
             input_states._foot_pos_target_rel[i, 0] += delta_x
             input_states._foot_pos_target_rel[i, 1] += delta_y
 
+    # swing trajectory 계산 - 베지어 통해
     def _get_from_bezier_curve(
         self, foot_pos_start: np.ndarray, foot_pos_final: np.ndarray, bezier_time: float
     ) -> np.ndarray:
@@ -363,12 +379,13 @@ class A1RobotControl:
         F_max = 250.0
 
         # C.T @ Q @ C + R 
-        # C : control - state matrix / x = Cu
+        # C : control - state matrix / x = Cu / x: root_acc & u : GRF
         # R / Q : weight matrix
         hessian = np.identity(12) * R + inertia_inv.T @ Q @ inertia_inv
 
         # zero-reference MPC formulation
         # TODO: 여기가 이해가 안간다.
+        # -C.T @ Q @ x
         gradient = -inertia_inv.T @ Q @ root_acc
         linearMatrix = np.zeros([20, 12])
         lowerBound = np.zeros(20)
@@ -456,6 +473,7 @@ class A1RobotControl:
         elif euler_error[2] < -3.1415926 * 1.5:
             euler_error[2] = desired_states._euler_d[2] + 3.1415926 * 2 - input_states._euler[2]
 
+        # 논문의 3-C
         root_acc = np.zeros(6)
         # _root_pos_d : the desired body position in world frame
         # _root_pos : robot position in world frame
@@ -491,7 +509,7 @@ class A1RobotControl:
 
         # Create inverse inertia matrix
         #
-        # TODO: inertia_inv이 자체가 무슨 의미를 갖고 있지? 
+        # TODO: inertia_inv이 자체가 무슨 의미를 갖고 있지? => F=MA에서 M^{-1}에 해당해서 inertia_inv라고 하지 않았나 생각해봄
         inertia_inv = np.zeros([6, 12])
         inertia_inv[0:3] = np.tile(np.eye(3), 4)  # TODO: use the real inertia from URDF
 

@@ -121,7 +121,7 @@ class A1QPController:
             if (self._ctrl_states._exp_time > 1) and self._ctrl_states._init_transition == 0:
                 self._ctrl_states._init_transition = 1
 
-        # 간단한 경로 추적 
+        # 아주 간단한 P 제어 경로 추적 
         if path_follow:
             if self._ctrl_states._exp_time > 6:
                 if self.waypoint_tgt_idx == len(self.waypoint_pose) and self._ctrl_states._init_transition == 1:
