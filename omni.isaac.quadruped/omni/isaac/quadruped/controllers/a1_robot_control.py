@@ -114,6 +114,9 @@ class A1RobotControl:
         # foot_pos_target => robot frame 기준 target
 
         # 논문의 3-C
+
+        # _kp_foot: swing foot position error coefficient
+        # _kp_linear: stance foot force position error coefficient
         foot_pos_target = self._get_from_bezier_curve(input_states._foot_pos_start_rel, foot_pos_final, bezier_time)
         foot_pos_error = foot_pos_target - foot_pos_cur
         foot_forces_kin = (input_params._kp_foot * foot_pos_error).flatten()
@@ -352,7 +355,7 @@ class A1RobotControl:
         Returns:
             grf {np.ndarray}
         """
-
+        
         inertia_inv, root_acc, acc_weight, u_weight = self._get_qp_params(desired_states, input_states, input_params)
 
         modified_contacts = np.array([True, True, True, True])
@@ -427,6 +430,17 @@ class A1RobotControl:
         # -0.2*RR_z <= RR_x <= 0.2*RR_z
         # -0.2*RR_z <= RR_y <= 0.2*RR_z
 
+        # sp.csc_matrix example
+        #
+        # row = np.array([0, 2, 2, 0, 1, 2])
+        # col = np.array([0, 0, 1, 2, 2, 2])
+        # data = np.array([1, 2, 3, 4, 5, 6])
+        # csc_array((data, (row, col)), shape=(3, 3)).toarray()
+        # array([[1, 0, 4],
+        #     [0, 0, 5],
+        #     [2, 3, 6]])
+
+        # 어떤 컴팩트한 포맷으로 변환된다. 계산 효율위해서 인 것 같음
         sparse_hessian = sp.csc_matrix(hessian)
 
         # initialize the OSQP solver
@@ -507,7 +521,7 @@ class A1RobotControl:
             if root_acc[i] > 500:
                 root_acc[i] = 500
 
-        # Create inverse inertia matrix
+        # Create inverse inertia matrix - 논문의 3B
         #
         # TODO: inertia_inv이 자체가 무슨 의미를 갖고 있지? => F=MA에서 M^{-1}에 해당해서 inertia_inv라고 하지 않았나 생각해봄
         inertia_inv = np.zeros([6, 12])
@@ -515,6 +529,7 @@ class A1RobotControl:
 
         # _foot_pos_abs: the foot current pos in the absolute frame (rotated robot frame) - world frame 다리 위치임
         # inertia_inv 하단부는 결국 robot frame 기준으로 _foot_pos_abs 변환한 것이다. => 이게 inertia inverse??
+        # 벡터와 벡터의 cross product는 skew-sym-matrix와 벡터의 곱으로 나타낼 수 있다. 동일함
         for i in range(4):
             skew_mat = skew(input_states._foot_pos_abs[i, :])
             inertia_inv[3:6, i * 3 : i * 3 + 3] = input_states._rot_mat_z.T @ skew_mat
