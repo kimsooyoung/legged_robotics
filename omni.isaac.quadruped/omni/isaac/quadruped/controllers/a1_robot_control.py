@@ -140,7 +140,8 @@ class A1RobotControl:
             input_states._contacts[i] = input_states._contacts[i] or input_states._early_contacts[i]
 
         # root control
-        # grf : 지금 world frame 기준
+        # grf : 지금 world frame 기준 
+        # grf는 현재 COM에 가해지는 6dof 힘인 상황
         grf = self._compute_grf(desired_states, input_states, input_params)
         grf_rel = grf @ input_states._rot_mat
         foot_forces_grf = -grf_rel.flatten()
@@ -154,8 +155,10 @@ class A1RobotControl:
         # 몸체를 중심점으로 생각하면, 끝점에 의한 모멘트 평형만 생각하면 된다.
         # M @ foot_forces_kin => 토크
         # np.linalg.inv(input_states._j_foot) 곱해주기 => 극 좌표 변환
+        # tau = J.inv @ M @ K_p(p_des - p)
         torques_kin = np.linalg.inv(input_states._j_foot) @ M @ foot_forces_kin
         # torques_kin = input_states._j_foot.T @ foot_forces_kin
+        # tau = J.T @ F
         torques_grf = input_states._j_foot.T @ foot_forces_grf
 
         # combine torques

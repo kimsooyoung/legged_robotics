@@ -120,3 +120,11 @@ def set_target_command
 
 def advance
     Perform torque command generation.
+
+
+==============================
+
+
+generate_ctrl 
+> _compute_grf
+> _get_qp_params
